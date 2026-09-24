@@ -26,5 +26,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f "tag_name=$GITHUB_REF_NAME" --jq '.body' > build/generated-notes.md
+          cat .github/release-intro.md build/generated-notes.md > build/release-notes.md
           gh release create "$GITHUB_REF_NAME" build/Microphone-Choice-*-macos-universal.zip \
-            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+            --title "$GITHUB_REF_NAME" --notes-file build/release-notes.md --verify-tag
