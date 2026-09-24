@@ -174,27 +174,29 @@ private final class MicrophoneMonitor {
     }
 }
 
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
-app.finishLaunching()
-
 if CommandLine.arguments.contains("--probe") {
     for device in bluetoothInputs() { print("\(device.name)\t\(device.uid)") }
-} else if CommandLine.arguments.contains("--test-prompt") {
-    if let device = bluetoothInputs().first { askAbout(device) }
-    else { log("No connected Bluetooth microphone to test") }
 } else {
-    // Homebrew manages its own service, so it passes --no-login-item.
-    if !CommandLine.arguments.contains("--no-login-item") {
-        registerLoginItemIfNeeded()
-    }
-    let monitor = MicrophoneMonitor()
-    monitor.start()
-    Darwin.signal(SIGUSR1, SIG_IGN)
-    let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-    diagnosticSignal.setEventHandler {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+
+    if CommandLine.arguments.contains("--test-prompt") {
         if let device = bluetoothInputs().first { askAbout(device) }
+        else { log("No connected Bluetooth microphone to test") }
+    } else {
+        // Homebrew manages its own service, so it passes --no-login-item.
+        if !CommandLine.arguments.contains("--no-login-item") {
+            registerLoginItemIfNeeded()
+        }
+        let monitor = MicrophoneMonitor()
+        monitor.start()
+        Darwin.signal(SIGUSR1, SIG_IGN)
+        let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        diagnosticSignal.setEventHandler {
+            if let device = bluetoothInputs().first { askAbout(device) }
+        }
+        diagnosticSignal.resume()
+        app.run()
     }
-    diagnosticSignal.resume()
-    app.run()
 }
