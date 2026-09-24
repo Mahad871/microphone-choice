@@ -1,0 +1,30 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal app and ZIP
+        run: ./scripts/package-release.sh
+      - name: Verify package
+        run: |
+          lipo -info "build/Microphone Choice.app/Contents/MacOS/MicChoice"
+          codesign --verify --deep --strict "build/Microphone Choice.app"
+          "build/Microphone Choice.app/Contents/MacOS/MicChoice" --probe
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/Microphone-Choice-*-macos-universal.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
