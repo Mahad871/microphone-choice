@@ -11,11 +11,12 @@ trap 'rm -rf "$work_dir"' EXIT
 mkdir -p "$resource_dir" "$app_dir/Contents/MacOS" "$work_dir/MicChoice.iconset"
 cp "$project_dir/Assets/Info.plist" "$app_dir/Contents/Info.plist"
 
-source_file="$project_dir/Sources/MicrophoneChoice/main.swift"
+source_dir="$project_dir/Sources/MicrophoneChoice"
 sdk_dir="$(xcrun --sdk macosx --show-sdk-path)"
 for architecture in arm64 x86_64; do
   swiftc -O -target "${architecture}-apple-macos13.0" -sdk "$sdk_dir" \
-    "$source_file" -o "$work_dir/MicChoice-$architecture"
+    "$source_dir/main.swift" "$source_dir/ConnectionTracker.swift" \
+    -o "$work_dir/MicChoice-$architecture"
 done
 lipo -create "$work_dir/MicChoice-arm64" "$work_dir/MicChoice-x86_64" \
   -output "$app_dir/Contents/MacOS/MicChoice"

@@ -11,6 +11,8 @@ private struct InputDevice {
     let id: AudioDeviceID
     let uid: String
     let name: String
+
+    var connectionKey: String { bluetoothConnectionKey(uid) }
 }
 
 private func propertyAddress(_ selector: AudioObjectPropertySelector,
@@ -63,6 +65,15 @@ private func bluetoothInputs() -> [InputDevice] {
     }
 }
 
+private func bluetoothConnectionKeys() -> Set<String> {
+    Set(deviceIDs().compactMap { id in
+        guard let transport = uintProperty(id, kAudioDevicePropertyTransportType),
+              transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE,
+              let uid = stringProperty(id, kAudioDevicePropertyDeviceUID) else { return nil }
+        return bluetoothConnectionKey(uid)
+    })
+}
+
 private func builtInMicrophone() -> AudioDeviceID? {
     deviceIDs().first { stringProperty($0, kAudioDevicePropertyDeviceUID) == "BuiltInMicrophoneDevice" }
 }
@@ -113,6 +124,8 @@ private func askAbout(_ device: InputDevice) {
     alert.window.title = "Microphone Choice"
     alert.window.level = .floating
     alert.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    alert.layout()
+    alert.window.center()
     if #available(macOS 14.0, *) {
         NSApp.activate()
     } else {
@@ -138,12 +151,15 @@ private func askAbout(_ device: InputDevice) {
 }
 
 private final class MicrophoneMonitor {
-    private var knownUIDs = Set<String>()
+    private var connections = ConnectionTracker(initialInputKeys: [], connectedKeys: [])
+    private var pendingUIDs: [String] = []
+    private var isPresenting = false
     private var timer: Timer?
 
     func start() {
         let current = bluetoothInputs()
-        knownUIDs = Set(current.map(\.uid))
+        connections = ConnectionTracker(initialInputKeys: Set(current.map(\.connectionKey)),
+                                        connectedKeys: bluetoothConnectionKeys())
         if let selected = uintProperty(audioSystem, kAudioHardwarePropertyDefaultInputDevice),
            current.contains(where: { $0.id == selected }),
            let macMic = builtInMicrophone() {
@@ -155,9 +171,8 @@ private final class MicrophoneMonitor {
         let status = AudioObjectAddPropertyListenerBlock(audioSystem, &address, DispatchQueue.main) { [weak self] _, _ in
             self?.scan()
         }
-        guard status == noErr else {
+        if status != noErr {
             log("Core Audio listener failed with status \(status)")
-            return
         }
         timer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
             self?.scan()
@@ -167,10 +182,33 @@ private final class MicrophoneMonitor {
 
     private func scan() {
         let current = bluetoothInputs()
-        let currentUIDs = Set(current.map(\.uid))
-        let added = current.filter { !knownUIDs.contains($0.uid) }
-        knownUIDs = currentUIDs
-        for device in added { askAbout(device) }
+        let currentKeys = Set(current.map(\.connectionKey))
+        for key in connections.newlyConnected(currentKeys, connectedKeys: bluetoothConnectionKeys())
+            where !pendingUIDs.contains(key) {
+            pendingUIDs.append(key)
+        }
+        presentNextIfIdle()
+    }
+
+    func requestDiagnosticPrompt() {
+        guard !isPresenting, let key = bluetoothInputs().first?.connectionKey,
+              !pendingUIDs.contains(key) else { return }
+        pendingUIDs.append(key)
+        presentNextIfIdle()
+    }
+
+    private func presentNextIfIdle() {
+        guard !isPresenting else { return }
+        isPresenting = true
+        defer { isPresenting = false }
+
+        while !pendingUIDs.isEmpty {
+            let key = pendingUIDs.removeFirst()
+            guard let device = bluetoothInputs().first(where: { $0.connectionKey == key }) else { continue }
+            connections.beginPrompt(for: key)
+            askAbout(device)
+            connections.endPrompt(for: key)
+        }
     }
 }
 
@@ -194,7 +232,7 @@ if CommandLine.arguments.contains("--probe") {
         Darwin.signal(SIGUSR1, SIG_IGN)
         let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         diagnosticSignal.setEventHandler {
-            if let device = bluetoothInputs().first { askAbout(device) }
+            monitor.requestDiagnosticPrompt()
         }
         diagnosticSignal.resume()
         app.run()
