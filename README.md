@@ -1,12 +1,12 @@
 # Microphone Choice
 
-![Microphone Choice icon](Assets/MicChoice.png)
+<img src="Assets/MicChoice.png" alt="Microphone Choice icon" width="96">
 
 **Keep your Bluetooth headphones sounding their best, while choosing the microphone you actually want.**
 
 Microphone Choice is a small, open-source macOS app. When a Bluetooth device with a microphone connects, it selects your Mac's built-in microphone and asks whether you want to keep it or use the Bluetooth microphone. Your answer changes the system input device; the app leaves your output device alone.
 
-![Microphone Choice asking which microphone to use](screenshots/microphone-prompt.png)
+<img src="screenshots/microphone-prompt.png" alt="Microphone Choice asking which microphone to use" width="320">
 
 ## Why I made it
 
