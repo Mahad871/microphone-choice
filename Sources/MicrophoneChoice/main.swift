@@ -111,6 +111,7 @@ private func askAbout(_ device: InputDevice) {
         }
     }
 
+    let promptScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
     let alert = NSAlert()
     if let iconURL = Bundle.main.url(forResource: "MicChoice", withExtension: "png"),
        let icon = NSImage(contentsOf: iconURL) {
@@ -118,20 +119,43 @@ private func askAbout(_ device: InputDevice) {
     }
     alert.messageText = "Use \(device.name)’s microphone?"
     alert.informativeText = "The Mac microphone keeps Bluetooth headphone playback at higher quality."
-    alert.addButton(withTitle: "Use Mac microphone")
-    alert.addButton(withTitle: "Use headset microphone")
+    let macButton = alert.addButton(withTitle: "Use Mac microphone")
+    alert.addButton(withTitle: "Use Bluetooth microphone")
     alert.alertStyle = .informational
     alert.window.title = "Microphone Choice"
     alert.window.level = .floating
     alert.window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     alert.layout()
-    alert.window.center()
+    let accentBackground = NSView()
+    accentBackground.wantsLayer = true
+    accentBackground.layer?.backgroundColor = NSColor(srgbRed: 214 / 255, green: 31 / 255,
+                                                      blue: 73 / 255, alpha: 1).cgColor
+    accentBackground.layer?.cornerRadius = 11
+    func centerPrompt() {
+        if let screen = promptScreen ?? NSScreen.main {
+            let bounds = screen.visibleFrame
+            let size = alert.window.frame.size
+            alert.window.setFrameOrigin(NSPoint(x: bounds.midX - size.width / 2,
+                                                y: bounds.midY - size.height / 2))
+        }
+    }
     if #available(macOS 14.0, *) {
         NSApp.activate()
     } else {
         NSApp.activate(ignoringOtherApps: true)
     }
     alert.window.makeKeyAndOrderFront(nil)
+    centerPrompt()
+    let positionTimer = Timer(timeInterval: 0.01, repeats: false) { _ in
+        macButton.isBordered = false
+        macButton.contentTintColor = .white
+        alert.layout()
+        macButton.frame = macButton.frame.insetBy(dx: 0, dy: -3)
+        accentBackground.frame = macButton.frame
+        macButton.superview?.addSubview(accentBackground, positioned: .below, relativeTo: macButton)
+        centerPrompt()
+    }
+    RunLoop.main.add(positionTimer, forMode: .common)
     log("Showing microphone choice for \(device.name)")
 
     let timeout = Timer(timeInterval: promptTimeout, repeats: false) { _ in
@@ -139,6 +163,7 @@ private func askAbout(_ device: InputDevice) {
     }
     RunLoop.main.add(timeout, forMode: .common)
     let answer = alert.runModal()
+    positionTimer.invalidate()
     timeout.invalidate()
     alert.window.orderOut(nil)
 
