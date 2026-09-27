@@ -6,7 +6,7 @@ func checkRememberedChoices() {
     defer { defaults.removePersistentDomain(forName: suiteName) }
 
     let store = RememberedChoices(defaults: defaults)
-    let mac = RememberedChoice(microphone: .mac, deviceName: "Headset A")
+    let mac = RememberedChoice(microphone: .preferred, deviceName: "Headset A")
     let bluetooth = RememberedChoice(microphone: .bluetooth, deviceName: "Headset B")
     assert(store.choice(for: "A") == nil)
     store.save(mac, for: "A")
@@ -21,5 +21,6 @@ func checkRememberedChoices() {
     reloaded.forget("A")
     assert(store.choice(for: "A") == nil)
     assert(store.choice(for: "B") == bluetooth)
+    assert(MicrophoneChoice(rawValue: "mac") == .preferred)
     print("Remembered choices passed")
 }

@@ -1,7 +1,8 @@
 import Foundation
 
 enum MicrophoneChoice: String, Codable {
-    case mac
+    // Preserve the on-disk value used by earlier Mac-microphone choices.
+    case preferred = "mac"
     case bluetooth
 }
 
@@ -22,6 +23,8 @@ struct RememberedChoices {
     func choice(for key: String) -> RememberedChoice? {
         allChoices()[key]
     }
+
+    func all() -> [String: RememberedChoice] { allChoices() }
 
     func save(_ choice: RememberedChoice, for key: String) {
         var choices = allChoices()

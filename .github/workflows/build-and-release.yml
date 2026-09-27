@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Check connection tracking
+      - name: Check connections, preferences, and hotkeys
         run: ./scripts/test-connection-tracker.sh
       - name: Build universal app and ZIP
         run: ./scripts/package-release.sh

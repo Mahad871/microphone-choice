@@ -2,6 +2,9 @@ import Foundation
 import UserNotifications
 
 final class ChoiceNotifications: NSObject, UNUserNotificationCenterDelegate {
+    var enabled = true
+    private(set) var permissionStatus = "Checking permission…"
+    var onStatusChanged: (() -> Void)?
     var onChangeChoice: ((String) -> Void)? {
         didSet {
             guard let onChangeChoice else { return }
@@ -23,20 +26,38 @@ final class ChoiceNotifications: NSObject, UNUserNotificationCenterDelegate {
                                               actions: [changeAction], intentIdentifiers: [],
                                               options: [])
         center.setNotificationCategories([category])
+        refreshPermission()
     }
 
-    func requestPermission() {
-        center.requestAuthorization(options: [.alert]) { granted, error in
-            if let error { notificationLog("Notification permission failed: \(error.localizedDescription)") }
-            else if !granted { notificationLog("Notifications are disabled; saved choices still apply") }
+    func refreshPermission() {
+        center.getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch settings.authorizationStatus {
+                case .authorized, .provisional: self.permissionStatus = "Allowed by macOS"
+                case .notDetermined: self.permissionStatus = "Permission has not been requested"
+                default: self.permissionStatus = "Disabled in macOS notification settings"
+                }
+                self.onStatusChanged?()
+            }
         }
     }
 
-    func showAppliedChoice(_ choice: RememberedChoice, for key: String) {
+    func requestPermission() {
+        guard enabled else { return }
+        center.requestAuthorization(options: [.alert]) { granted, error in
+            if let error { notificationLog("Notification permission failed: \(error.localizedDescription)") }
+            else if !granted { notificationLog("Notifications are disabled; saved choices still apply") }
+            self.refreshPermission()
+        }
+    }
+
+    func showAppliedChoice(_ choice: RememberedChoice, for key: String, preferredName: String) {
+        guard enabled else { return }
         let content = UNMutableNotificationContent()
         switch choice.microphone {
-        case .mac:
-            content.title = "Using Mac microphone"
+        case .preferred:
+            content.title = "Using \(preferredName)"
         case .bluetooth:
             content.title = "Using \(choice.deviceName) microphone"
         }
@@ -66,6 +87,7 @@ final class ChoiceNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func post(_ content: UNNotificationContent, identifier: String) {
+        guard enabled else { return }
         center.removeDeliveredNotifications(withIdentifiers: [identifier])
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { error in
             if let error { notificationLog("Could not show saved-choice notification: \(error.localizedDescription)") }

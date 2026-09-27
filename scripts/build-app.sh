@@ -15,9 +15,7 @@ source_dir="$project_dir/Sources/MicrophoneChoice"
 sdk_dir="$(xcrun --sdk macosx --show-sdk-path)"
 for architecture in arm64 x86_64; do
   swiftc -O -target "${architecture}-apple-macos13.0" -sdk "$sdk_dir" \
-    "$source_dir/main.swift" "$source_dir/ConnectionTracker.swift" \
-    "$source_dir/BluetoothConnectionObserver.swift" "$source_dir/RememberedChoices.swift" \
-    "$source_dir/ChoiceNotifications.swift" -framework IOBluetooth -framework UserNotifications \
+    "$source_dir"/*.swift -framework IOBluetooth -framework UserNotifications -framework Carbon \
     -o "$work_dir/MicChoice-$architecture"
 done
 lipo -create "$work_dir/MicChoice-arm64" "$work_dir/MicChoice-x86_64" \
