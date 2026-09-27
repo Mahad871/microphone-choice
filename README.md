@@ -25,7 +25,7 @@ brew install Mahad871/tap/microphone-choice
 brew services start microphone-choice
 ```
 
-The service starts when you log in. To stop or remove it:
+The service starts when you log in. If macOS asks for Bluetooth access, allow it so the app can recognize headset reconnects reliably. To stop or remove it:
 
 ```sh
 brew services stop microphone-choice
@@ -42,14 +42,14 @@ Use one installation method at a time so that two copies do not both ask you abo
 
 ## What it does
 
-1. Watches Core Audio for newly connected Bluetooth input devices, with a short periodic check as a fallback.
+1. Watches Bluetooth connections and Core Audio input devices, with a short periodic check as a fallback.
 2. Selects the built-in Mac microphone while it waits for your answer.
 3. Shows a centered dialog with **Use Mac microphone** highlighted and **Use Bluetooth microphone** as the other choice.
 4. Keeps the Mac microphone if you dismiss the dialog or do not answer within 60 seconds.
 
 It works with Bluetooth devices that macOS exposes as microphone inputs. It changes the **system default input**, so an app that has its own microphone setting may still need a separate change. It does not change the Bluetooth output, codec, volume, or equalizer. On startup, if a connected Bluetooth microphone is currently the system input, it restores the built-in microphone.
 
-The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It only reads audio device information and changes the default input. Diagnostic messages go to the process's local standard error log.
+The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It reads Bluetooth connection status and audio device information, then changes the default input. Diagnostic messages go to the process's local standard error log.
 
 ## Build from source
 

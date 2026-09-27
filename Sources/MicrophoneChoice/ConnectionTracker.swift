@@ -1,10 +1,21 @@
 import Foundation
 
 func bluetoothConnectionKey(_ uid: String) -> String {
+    let base: String
     for suffix in [":input", ":output"] where uid.hasSuffix(suffix) {
-        return String(uid.dropLast(suffix.count))
+        base = String(uid.dropLast(suffix.count))
+        return bluetoothAddressKey(base) ?? base
     }
-    return uid
+    return bluetoothAddressKey(uid) ?? uid
+}
+
+/// Core Audio and IOBluetooth can use different separators and letter case for one address.
+func bluetoothAddressKey(_ address: String) -> String? {
+    let octets = address.split(whereSeparator: { $0 == "-" || $0 == ":" })
+    guard octets.count == 6, octets.allSatisfy({ octet in
+        octet.count == 2 && octet.allSatisfy(\.isHexDigit)
+    }) else { return nil }
+    return octets.map { $0.uppercased() }.joined(separator: "-")
 }
 
 /// Treats brief Core Audio device-list gaps as part of the same connection.
@@ -32,6 +43,13 @@ struct ConnectionTracker {
         activePrompts.remove(uid)
         protectedUntil[uid] = now.addingTimeInterval(postPromptGrace)
         lastSeen[uid] = now
+    }
+
+    /// A real Bluetooth disconnect ends this connection even if Core Audio still lists it.
+    mutating func physicallyDisconnected(_ uid: String) {
+        promptedKeys.remove(uid)
+        protectedUntil.removeValue(forKey: uid)
+        lastSeen.removeValue(forKey: uid)
     }
 
     mutating func newlyConnected(_ inputKeys: Set<String>, connectedKeys: Set<String>,

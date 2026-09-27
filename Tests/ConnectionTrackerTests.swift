@@ -9,6 +9,9 @@ enum ConnectionTrackerTests {
         assert(bluetoothConnectionKey("AA-BB:input") == "AA-BB")
         assert(bluetoothConnectionKey("AA-BB:output") == "AA-BB")
         assert(bluetoothConnectionKey("unusual-device-id") == "unusual-device-id")
+        assert(bluetoothConnectionKey("e8-ee-cc-84-62-57:input") == "E8-EE-CC-84-62-57")
+        assert(bluetoothAddressKey("e8:ee:cc:84:62:57") == "E8-EE-CC-84-62-57")
+        assert(bluetoothAddressKey("unusual-device-id") == nil)
 
         var tracker = ConnectionTracker(initialInputKeys: [], connectedKeys: [],
                                         at: moment(0), absenceGrace: 10)
@@ -51,6 +54,19 @@ enum ConnectionTrackerTests {
                                            connectedKeys: ["output-only"], at: moment(0))
         assert(outputOnly.newlyConnected(["output-only"], connectedKeys: ["output-only"],
                                          at: moment(1)) == ["output-only"])
+
+        // The radio can disconnect and reconnect before Core Audio removes its output.
+        var quickReconnect = ConnectionTracker(initialInputKeys: ["headset"],
+                                               connectedKeys: ["headset"], at: moment(0))
+        quickReconnect.beginPrompt(for: "headset")
+        quickReconnect.endPrompt(for: "headset", at: moment(1))
+        quickReconnect.physicallyDisconnected("headset")
+        assert(quickReconnect.newlyConnected([], connectedKeys: ["headset"],
+                                             at: moment(2)).isEmpty)
+        assert(quickReconnect.newlyConnected(["headset"], connectedKeys: ["headset"],
+                                             at: moment(3)) == ["headset"])
+        assert(quickReconnect.newlyConnected(["headset"], connectedKeys: ["headset"],
+                                             at: moment(4)).isEmpty)
         print("Connection tracking passed")
     }
 }

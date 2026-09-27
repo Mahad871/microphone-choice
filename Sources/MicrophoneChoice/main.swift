@@ -177,14 +177,24 @@ private func askAbout(_ device: InputDevice) {
 
 private final class MicrophoneMonitor {
     private var connections = ConnectionTracker(initialInputKeys: [], connectedKeys: [])
+    private let bluetooth = BluetoothConnectionObserver()
     private var pendingUIDs: [String] = []
     private var isPresenting = false
     private var timer: Timer?
 
     func start() {
         let current = bluetoothInputs()
+        let connectedKeys = bluetoothConnectionKeys()
         connections = ConnectionTracker(initialInputKeys: Set(current.map(\.connectionKey)),
-                                        connectedKeys: bluetoothConnectionKeys())
+                                        connectedKeys: connectedKeys)
+        bluetooth.onDisconnect = { [weak self] key in
+            guard let self else { return }
+            self.connections.physicallyDisconnected(key)
+            self.pendingUIDs.removeAll { $0 == key }
+            log("Bluetooth disconnected: \(key)")
+        }
+        bluetooth.onConnect = { [weak self] in self?.scan() }
+        bluetooth.start(watching: connectedKeys)
         if let selected = uintProperty(audioSystem, kAudioHardwarePropertyDefaultInputDevice),
            current.contains(where: { $0.id == selected }),
            let macMic = builtInMicrophone() {
@@ -207,10 +217,12 @@ private final class MicrophoneMonitor {
 
     private func scan() {
         let current = bluetoothInputs()
-        let currentKeys = Set(current.map(\.connectionKey))
-        for key in connections.newlyConnected(currentKeys, connectedKeys: bluetoothConnectionKeys())
+        let currentKeys = bluetooth.availableKeys(from: Set(current.map(\.connectionKey)))
+        let connectedKeys = bluetooth.availableKeys(from: bluetoothConnectionKeys())
+        for key in connections.newlyConnected(currentKeys, connectedKeys: connectedKeys)
             where !pendingUIDs.contains(key) {
             pendingUIDs.append(key)
+            log("Queued microphone choice for \(key)")
         }
         presentNextIfIdle()
     }
@@ -229,7 +241,8 @@ private final class MicrophoneMonitor {
 
         while !pendingUIDs.isEmpty {
             let key = pendingUIDs.removeFirst()
-            guard let device = bluetoothInputs().first(where: { $0.connectionKey == key }) else { continue }
+            guard bluetooth.availableKeys(from: [key]).contains(key),
+                  let device = bluetoothInputs().first(where: { $0.connectionKey == key }) else { continue }
             connections.beginPrompt(for: key)
             askAbout(device)
             connections.endPrompt(for: key)
