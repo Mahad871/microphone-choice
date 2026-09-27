@@ -103,11 +103,16 @@ private func registerLoginItemIfNeeded() {
     }
 }
 
-private func askAbout(_ device: InputDevice) {
-    if let macMic = builtInMicrophone() {
+private struct PromptSelection {
+    let microphone: MicrophoneChoice
+    let remember: Bool
+}
+
+private func askAbout(name: String, device: InputDevice?, saved: RememberedChoice? = nil) -> PromptSelection? {
+    if saved == nil, device != nil, let macMic = builtInMicrophone() {
         guard selectInput(macMic) else {
             log("Could not select the built in microphone")
-            return
+            return nil
         }
     }
 
@@ -117,8 +122,20 @@ private func askAbout(_ device: InputDevice) {
        let icon = NSImage(contentsOf: iconURL) {
         alert.icon = icon
     }
-    alert.messageText = "Use \(device.name)’s microphone?"
-    alert.informativeText = "The Mac microphone keeps Bluetooth headphone playback at higher quality."
+    if let saved {
+        alert.messageText = "Change microphone choice for \(name)"
+        let selectedName = saved.microphone == .mac ? "Mac microphone" : "Bluetooth microphone"
+        alert.informativeText = "Saved choice: \(selectedName). Uncheck the box to ask again next time."
+        if device == nil { alert.informativeText += " Changes will apply when this device reconnects." }
+    } else {
+        alert.messageText = "Use \(name)’s microphone?"
+        alert.informativeText = "The Mac microphone keeps Bluetooth headphone playback at higher quality."
+    }
+    let rememberCheckbox = NSButton(checkboxWithTitle: "Remember my choice for this device",
+                                    target: nil, action: nil)
+    rememberCheckbox.frame = NSRect(x: 0, y: 0, width: 320, height: 26)
+    rememberCheckbox.state = saved == nil ? .off : .on
+    alert.accessoryView = rememberCheckbox
     let macButton = alert.addButton(withTitle: "Use Mac microphone")
     alert.addButton(withTitle: "Use Bluetooth microphone")
     alert.alertStyle = .informational
@@ -156,7 +173,7 @@ private func askAbout(_ device: InputDevice) {
         centerPrompt()
     }
     RunLoop.main.add(positionTimer, forMode: .common)
-    log("Showing microphone choice for \(device.name)")
+    log("Showing microphone choice for \(name)")
 
     let timeout = Timer(timeInterval: promptTimeout, repeats: false) { _ in
         NSApp.abortModal()
@@ -167,20 +184,49 @@ private func askAbout(_ device: InputDevice) {
     timeout.invalidate()
     alert.window.orderOut(nil)
 
-    if answer == .alertSecondButtonReturn && bluetoothInputs().contains(where: { $0.uid == device.uid }) {
-        if selectInput(device.id) { log("Selected \(device.name) microphone") }
-        else { log("Headset microphone became unavailable") }
-    } else {
-        log("Kept Mac microphone")
+    let microphone: MicrophoneChoice
+    switch answer {
+    case .alertFirstButtonReturn: microphone = .mac
+    case .alertSecondButtonReturn: microphone = .bluetooth
+    default: return nil
+    }
+    return PromptSelection(microphone: microphone, remember: rememberCheckbox.state == .on)
+}
+
+@discardableResult
+private func applyChoice(_ microphone: MicrophoneChoice, device: InputDevice?) -> Bool {
+    switch microphone {
+    case .mac:
+        guard let macMic = builtInMicrophone(), selectInput(macMic) else {
+            log("Could not select the built in microphone")
+            return false
+        }
+        log("Selected Mac microphone")
+        return true
+    case .bluetooth:
+        guard let device, bluetoothInputs().contains(where: { $0.uid == device.uid }),
+              selectInput(device.id) else {
+            log("Bluetooth microphone became unavailable")
+            return false
+        }
+        log("Selected \(device.name) microphone")
+        return true
     }
 }
 
 private final class MicrophoneMonitor {
     private var connections = ConnectionTracker(initialInputKeys: [], connectedKeys: [])
     private let bluetooth = BluetoothConnectionObserver()
+    private let remembered = RememberedChoices()
+    private let notifications: ChoiceNotifications
     private var pendingUIDs: [String] = []
+    private var pendingChanges: [String] = []
     private var isPresenting = false
     private var timer: Timer?
+
+    init(notifications: ChoiceNotifications) {
+        self.notifications = notifications
+    }
 
     func start() {
         let current = bluetoothInputs()
@@ -196,7 +242,8 @@ private final class MicrophoneMonitor {
         bluetooth.onConnect = { [weak self] in self?.scan() }
         bluetooth.start(watching: connectedKeys)
         if let selected = uintProperty(audioSystem, kAudioHardwarePropertyDefaultInputDevice),
-           current.contains(where: { $0.id == selected }),
+           let selectedDevice = current.first(where: { $0.id == selected }),
+           remembered.choice(for: selectedDevice.connectionKey)?.microphone != .bluetooth,
            let macMic = builtInMicrophone() {
             _ = selectInput(macMic)
             log("Restored Mac microphone at startup")
@@ -230,8 +277,28 @@ private final class MicrophoneMonitor {
     func requestDiagnosticPrompt() {
         guard !isPresenting, let key = bluetoothInputs().first?.connectionKey,
               !pendingUIDs.contains(key) else { return }
-        pendingUIDs.append(key)
+        if remembered.choice(for: key) != nil { pendingChanges.append(key) }
+        else { pendingUIDs.append(key) }
         presentNextIfIdle()
+    }
+
+    func requestChange(for key: String) {
+        guard remembered.choice(for: key) != nil, !pendingChanges.contains(key) else { return }
+        pendingChanges.append(key)
+        presentNextIfIdle()
+    }
+
+    private func saveSelection(_ selection: PromptSelection, for key: String,
+                               name: String, device: InputDevice?) {
+        if device != nil { _ = applyChoice(selection.microphone, device: device) }
+        if selection.remember {
+            remembered.save(RememberedChoice(microphone: selection.microphone, deviceName: name), for: key)
+            notifications.requestPermission()
+            log("Remembered \(selection.microphone.rawValue) microphone for \(name)")
+        } else if remembered.choice(for: key) != nil {
+            remembered.forget(key)
+            log("Forgot microphone choice for \(name)")
+        }
     }
 
     private func presentNextIfIdle() {
@@ -239,12 +306,30 @@ private final class MicrophoneMonitor {
         isPresenting = true
         defer { isPresenting = false }
 
-        while !pendingUIDs.isEmpty {
+        while !pendingChanges.isEmpty || !pendingUIDs.isEmpty {
+            if !pendingChanges.isEmpty {
+                let key = pendingChanges.removeFirst()
+                guard let saved = remembered.choice(for: key) else { continue }
+                let device = bluetoothInputs().first(where: { $0.connectionKey == key })
+                if let selection = askAbout(name: device?.name ?? saved.deviceName,
+                                            device: device, saved: saved) {
+                    saveSelection(selection, for: key,
+                                  name: device?.name ?? saved.deviceName, device: device)
+                }
+                continue
+            }
             let key = pendingUIDs.removeFirst()
             guard bluetooth.availableKeys(from: [key]).contains(key),
                   let device = bluetoothInputs().first(where: { $0.connectionKey == key }) else { continue }
             connections.beginPrompt(for: key)
-            askAbout(device)
+            if let saved = remembered.choice(for: key),
+               applyChoice(saved.microphone, device: device) {
+                notifications.showAppliedChoice(saved, for: key)
+                log("Applied remembered choice for \(device.name)")
+            } else if let selection = askAbout(name: device.name, device: device,
+                                               saved: remembered.choice(for: key)) {
+                saveSelection(selection, for: key, name: device.name, device: device)
+            }
             connections.endPrompt(for: key)
         }
     }
@@ -255,17 +340,20 @@ if CommandLine.arguments.contains("--probe") {
 } else {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
+    let notifications = ChoiceNotifications()
+    if !CommandLine.arguments.contains("--test-prompt") { notifications.start() }
     app.finishLaunching()
 
     if CommandLine.arguments.contains("--test-prompt") {
-        if let device = bluetoothInputs().first { askAbout(device) }
+        if let device = bluetoothInputs().first { _ = askAbout(name: device.name, device: device) }
         else { log("No connected Bluetooth microphone to test") }
     } else {
         // Homebrew manages its own service, so it passes --no-login-item.
         if !CommandLine.arguments.contains("--no-login-item") {
             registerLoginItemIfNeeded()
         }
-        let monitor = MicrophoneMonitor()
+        let monitor = MicrophoneMonitor(notifications: notifications)
+        notifications.onChangeChoice = { [weak monitor] key in monitor?.requestChange(for: key) }
         monitor.start()
         Darwin.signal(SIGUSR1, SIG_IGN)
         let diagnosticSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)

@@ -67,6 +67,7 @@ enum ConnectionTrackerTests {
                                              at: moment(3)) == ["headset"])
         assert(quickReconnect.newlyConnected(["headset"], connectedKeys: ["headset"],
                                              at: moment(4)).isEmpty)
+        checkRememberedChoices()
         print("Connection tracking passed")
     }
 }
