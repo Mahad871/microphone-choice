@@ -4,7 +4,7 @@
 
 **Keep your Bluetooth headphones sounding their best, while choosing the microphone you actually want.**
 
-Microphone Choice is a small, open-source macOS app. When a Bluetooth device with a microphone connects, it selects your Mac's built-in microphone and asks whether you want to keep it or use the Bluetooth microphone. Your answer changes the system input device; the app leaves your output device alone.
+Microphone Choice is a small, open-source macOS app. When a Bluetooth device with a microphone connects for the first time, it selects your Mac's built-in microphone and asks whether you want to keep it or use the Bluetooth microphone. On later connections, it applies any choice you saved for that device. The app leaves your output device alone.
 
 Check **Remember my choice for this device** in the dialog to use that microphone automatically on future connections. The app then shows a notification confirming the saved choice. Click **Change choice** (or the notification itself) to reopen the dialog; uncheck the box and choose a microphone to forget the saved choice.
 
@@ -47,7 +47,7 @@ Use one installation method at a time so that two copies do not both ask you abo
 1. Watches Bluetooth connections and Core Audio input devices, with a short periodic check as a fallback.
 2. Selects the built-in Mac microphone while it waits for your answer.
 3. Shows a centered dialog with **Use Mac microphone** highlighted and **Use Bluetooth microphone** as the other choice.
-4. Keeps the Mac microphone if you dismiss the dialog or do not answer within 60 seconds.
+4. Keeps the Mac microphone if you dismiss a first-time dialog or do not answer within 60 seconds. Dismissing an edit dialog leaves the saved choice unchanged.
 5. Saves a choice only when you check **Remember my choice for this device** and choose a microphone. Saved choices stay on your Mac.
 
 It works with Bluetooth devices that macOS exposes as microphone inputs. It changes the **system default input**, so an app that has its own microphone setting may still need a separate change. It does not change the Bluetooth output, codec, volume, or equalizer. On startup, if a connected Bluetooth microphone is currently the system input, it restores the built-in microphone.
