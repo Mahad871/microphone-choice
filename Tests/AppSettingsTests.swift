@@ -9,6 +9,14 @@ func checkAppSettings() {
     assert(settings.startAtLogin && settings.notificationsEnabled)
     assert(!settings.shortcut.enabled)
     assert(settings.theme == .system)
+    assert(LaunchAgentStatus.isDisabled(in: "\"sh.brew.microphone-choice\" => true",
+        label: "sh.brew.microphone-choice"))
+    assert(LaunchAgentStatus.isDisabled(in: "\"sh.brew.microphone-choice\" => disabled",
+        label: "sh.brew.microphone-choice"))
+    assert(!LaunchAgentStatus.isDisabled(in: "\"sh.brew.microphone-choice\" => enabled",
+        label: "sh.brew.microphone-choice"))
+    assert(!LaunchAgentStatus.isDisabled(in: "\"other.service\" => disabled",
+        label: "sh.brew.microphone-choice"))
     settings.theme = .dark
     settings.preferredInputUID = "usb"
     settings.preferredInputName = "USB microphone"

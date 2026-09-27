@@ -31,7 +31,7 @@ final class LoginController {
         if homebrewManaged {
             let result = launchctl(["print-disabled", "gui/\(getuid())"])
             guard result.status == 0 else { return settings.startAtLogin }
-            return !result.output.contains("\"\(serviceLabel)\" => true")
+            return !LaunchAgentStatus.isDisabled(in: result.output, label: serviceLabel)
         }
         return SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
     }

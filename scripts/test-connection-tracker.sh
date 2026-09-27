@@ -11,6 +11,7 @@ swiftc "$project_dir/Sources/MicrophoneChoice/ConnectionTracker.swift" \
   "$project_dir/Sources/MicrophoneChoice/Diagnostics.swift" \
   "$project_dir/Sources/MicrophoneChoice/SingleInstance.swift" \
   "$project_dir/Sources/MicrophoneChoice/GlobalShortcut.swift" \
+  "$project_dir/Sources/MicrophoneChoice/LaunchAgentStatus.swift" \
   "$project_dir/Tests/ConnectionTrackerTests.swift" \
   "$project_dir/Tests/RememberedChoicesTests.swift" \
   "$project_dir/Tests/AppSettingsTests.swift" \
