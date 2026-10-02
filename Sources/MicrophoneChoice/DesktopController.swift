@@ -43,6 +43,9 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private let undoButton = NSButton(title: "Undo forget", target: nil, action: nil)
     private let reportView = NSTextView()
     private let stageEnableSwitch = NSSwitch()
+    private let stageHoverSwitch = NSSwitch()
+    private let stageDoubleClickSwitch = NSSwitch()
+    private let stageInteractionLabel = NSTextField(wrappingLabelWithString: "")
     private let stagePerDisplaySwitch = NSSwitch()
     private let stageDisplayPopup = NSPopUpButton()
     private let stageWidthField = NSTextField()
@@ -65,6 +68,8 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     }
 
     func start() {
+        stageFill.onInteractionResult = { [weak self] outcome in self?.showStageResult(outcome) }
+        stageFill.startInteractions()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let icon = NSImage(systemSymbolName: "mic", accessibilityDescription: "Microphone Choice")
         icon?.isTemplate = true
@@ -152,6 +157,9 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         if settingsWindow == nil { buildSettingsWindow() }
         tabs.selectedSegment = tab
         selectPanel(tab)
+        // Populate fields before AppKit gives one an editor. Otherwise opening
+        // this tab directly can preserve an initially empty reserved-width field.
+        refresh()
         settingsWindow?.makeKeyAndOrderFront(nil)
         if #available(macOS 14.0, *) { NSApp.activate() }
         else { NSApp.activate(ignoringOtherApps: true) }
@@ -313,6 +321,12 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     }
 
     private func makeStagePanel() -> NSView {
+        stageHoverSwitch.target = self
+        stageHoverSwitch.action = #selector(stageInteractionChanged)
+        stageHoverSwitch.setAccessibilityLabel("Show a companion beside the green button")
+        stageDoubleClickSwitch.target = self
+        stageDoubleClickSwitch.action = #selector(stageInteractionChanged)
+        stageDoubleClickSwitch.setAccessibilityLabel("Use Stage Manager Fill on title-bar double-click")
         stageEnableSwitch.target = self
         stageEnableSwitch.action = #selector(stageEnabledChanged)
         stageEnableSwitch.setAccessibilityLabel("Enable Stage Manager Fill")
@@ -338,9 +352,14 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
                                      action: #selector(checkStageAccess))
         let panel = stack([
             heading("Stage Manager Fill"),
-            note("Fill the last active app window while leaving space on the left for Stage Manager. Apple's green button and tiling menu stay unchanged."),
+            note("Fill an app window while leaving space on the left for Stage Manager."),
             separator(),
             switchRow(stageEnableSwitch, title: "Enable Stage Manager Fill"),
+            switchRow(stageHoverSwitch, title: "Show beside the green button"),
+            secondary(NSTextField(wrappingLabelWithString: "Hover over the green button to reveal a companion action beside it. Apple's menu remains available below.")),
+            switchRow(stageDoubleClickSwitch, title: "Override title-bar double-click"),
+            secondary(stageInteractionLabel),
+            separator(),
             switchRow(stagePerDisplaySwitch, title: "Remember a width for each display"),
             stageDisplayPopup,
             heading("Reserved width"),
@@ -460,6 +479,11 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private func refreshStageFill() {
         let preferences = stageFill.preferences
         stageEnableSwitch.state = preferences.enabled ? .on : .off
+        stageHoverSwitch.state = preferences.greenButtonCompanion ? .on : .off
+        stageDoubleClickSwitch.state = preferences.titleBarDoubleClick ? .on : .off
+        stageHoverSwitch.isEnabled = preferences.enabled
+        stageDoubleClickSwitch.isEnabled = preferences.enabled
+        stageInteractionLabel.stringValue = stageFill.interactionStatus
         stagePerDisplaySwitch.state = preferences.rememberPerDisplay ? .on : .off
         let displays = StageDisplay.connected()
         let signature = displays.map { "\($0.key):\($0.name):\($0.visibleFrame)" }.joined(separator: "|")
@@ -569,6 +593,13 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     @objc private func openStageSettings() { showSettings(tab: 3) }
     @objc private func stageEnabledChanged() {
         stageFill.preferences.enabled = stageEnableSwitch.state == .on
+        stageFill.refreshInteractions()
+        refresh()
+    }
+    @objc private func stageInteractionChanged() {
+        stageFill.preferences.greenButtonCompanion = stageHoverSwitch.state == .on
+        stageFill.preferences.titleBarDoubleClick = stageDoubleClickSwitch.state == .on
+        stageFill.refreshInteractions()
         refresh()
     }
     @objc private func stagePerDisplayChanged() {
@@ -593,7 +624,10 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         stageWidthField.window?.makeFirstResponder(nil)
         refreshStageFill()
     }
-    @objc private func checkStageAccess() { refreshStageFill() }
+    @objc private func checkStageAccess() {
+        stageFill.refreshInteractions()
+        refreshStageFill()
+    }
     @objc private func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         if !NSWorkspace.shared.open(url) {
@@ -601,9 +635,15 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         }
     }
     @objc private func fillStageManager() {
-        switch stageFill.fillFocusedWindow() {
+        stageFill.requestFillFocusedWindow { [weak self] outcome in self?.showStageResult(outcome) }
+    }
+    private func showStageResult(_ outcome: StageFillOutcome) {
+        switch outcome {
         case .filled(let display, _, _):
             stageResultLabel.stringValue = "Filled the window on \(display)."
+            stageResultLabel.textColor = .secondaryLabelColor
+        case .restored:
+            stageResultLabel.stringValue = "Restored the window’s previous size and position."
             stageResultLabel.textColor = .secondaryLabelColor
         case .needsAccessibility:
             stageResultLabel.stringValue = "Grant Accessibility access, then choose Stage Manager Fill again."

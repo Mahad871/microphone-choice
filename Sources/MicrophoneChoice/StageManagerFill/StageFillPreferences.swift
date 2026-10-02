@@ -17,6 +17,16 @@ final class StageFillPreferences {
         set { defaults.set(newValue, forKey: "stageFillPerDisplay") }
     }
 
+    var titleBarDoubleClick: Bool {
+        get { defaults.bool(forKey: "stageFillTitleBarDoubleClick") }
+        set { defaults.set(newValue, forKey: "stageFillTitleBarDoubleClick") }
+    }
+
+    var greenButtonCompanion: Bool {
+        get { defaults.object(forKey: "stageFillGreenButtonCompanion") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "stageFillGreenButtonCompanion") }
+    }
+
     var defaultReservation: Int {
         get {
             guard let saved = defaults.object(forKey: "stageFillDefaultReservation") as? Int else {
