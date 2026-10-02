@@ -3,11 +3,15 @@ import ApplicationServices
 
 enum StageFillOutcome {
     case filled(display: String, requested: CGRect, actual: CGRect)
+    case restored(requested: CGRect, actual: CGRect)
     case needsAccessibility
     case unavailable(String)
 }
 
 final class StageFillWindowManager {
+    // Accessed only on the feature's serial window-action queue. Keep AX
+    // identities separate, including multiple windows owned by the same app.
+    private var restoreFrames: [(window: AXUIElement, state: StageRestoreState)] = []
     func fillFocusedWindow(of pid: pid_t, preferences: StageFillPreferences) -> StageFillOutcome {
         guard AXIsProcessTrusted() else { return .needsAccessibility }
         let application = AXUIElementCreateApplication(pid)
@@ -18,6 +22,15 @@ final class StageFillWindowManager {
               let window = value as! AXUIElement? else {
             return .unavailable("The selected app has no focused window to resize.")
         }
+        return fill(window: window, preferences: preferences)
+    }
+
+    /// Uses the captured window for pointer actions, even if focus changes
+    /// while a companion control is being clicked.
+    func fill(window: AXUIElement, preferences: StageFillPreferences,
+              displays: [StageDisplay]? = nil, primaryScreenTop: CGFloat? = nil,
+              toggle: Bool = false) -> StageFillOutcome {
+        guard AXIsProcessTrusted() else { return .needsAccessibility }
         AXUIElementSetMessagingTimeout(window, 2)
         guard stringAttribute(kAXRoleAttribute, of: window) == kAXWindowRole as String,
               stringAttribute(kAXSubroleAttribute, of: window) == kAXStandardWindowSubrole as String
@@ -32,14 +45,41 @@ final class StageFillWindowManager {
                 return .unavailable("This app does not allow its window to be resized or moved.")
             }
         }
-        guard let original = frame(of: window), let primaryTop = NSScreen.screens.first?.frame.maxY else {
+        guard let original = frame(of: window),
+              let primaryTop = primaryScreenTop ?? NSScreen.screens.first?.frame.maxY else {
             return .unavailable("The window frame or screen geometry is unavailable.")
         }
+        let connectedDisplays = displays ?? StageDisplay.connected()
         guard let display = StageFillGeometry.displayContainingMost(
-            of: original, displays: StageDisplay.connected(), primaryTop: primaryTop
+            of: original, displays: connectedDisplays, primaryTop: primaryTop
         ) else { return .unavailable("The window is not on a connected display.") }
         if StageFillGeometry.coversEntireDisplay(original, display: display, primaryTop: primaryTop) {
             return .unavailable("This window appears to be in native full screen. Leave full screen first.")
+        }
+        let savedIndex = restoreFrames.firstIndex { CFEqual($0.window, window) }
+        let saved = savedIndex.flatMap { restoreFrames[$0].state.restoreFrame(current: original) }
+        if toggle, let saved {
+            // Do not restore to a disconnected display or a now-hidden title bar.
+            let titleBar = CGRect(x: saved.minX, y: saved.minY, width: saved.width, height: 24)
+            let reachable = connectedDisplays.contains {
+                let visible = StageFillGeometry.axFrame(fromAppKit: $0.visibleFrame, primaryTop: primaryTop)
+                let overlap = visible.intersection(titleBar)
+                return overlap.width >= min(120, titleBar.width) && overlap.height >= 20
+            }
+            guard reachable else {
+                return .unavailable("The previous window position is no longer visible on a connected display. Move the window to choose a new starting position.")
+            }
+            guard setFrame(saved, of: window) else {
+                _ = setFrame(original, of: window)
+                return .unavailable("The app refused to restore its previous window size.")
+            }
+            Thread.sleep(forTimeInterval: 0.8)
+            guard let actual = frame(of: window), matches(actual, saved) else {
+                _ = setFrame(original, of: window)
+                return .unavailable("The app could not restore its previous window size. Try again after any window animation finishes.")
+            }
+            restoreFrames.removeAll { CFEqual($0.window, window) }
+            return .restored(requested: saved, actual: actual)
         }
         let target = StageFillGeometry.targetFrame(
             for: display, reservation: preferences.reservation(for: display.key), primaryTop: primaryTop
@@ -72,14 +112,15 @@ final class StageFillWindowManager {
                 ? "The app limited the window size. Its minimum or aspect ratio may prevent an exact fill."
                 : "The app limited the window size and did not fully restore its previous frame.")
         }
+        // Repeated explicit Fill commands must not overwrite the original frame.
+        restoreFrames.removeAll { CFEqual($0.window, window) }
+        restoreFrames.append((window, StageRestoreState(original: saved ?? original, filled: actual)))
+        if restoreFrames.count > 128 { restoreFrames.removeFirst() }
         return .filled(display: display.name, requested: target, actual: actual)
     }
 
     private func matches(_ actual: CGRect, _ requested: CGRect) -> Bool {
-        abs(actual.minX - requested.minX) <= 3 &&
-            abs(actual.minY - requested.minY) <= 3 &&
-            abs(actual.width - requested.width) <= 3 &&
-            abs(actual.height - requested.height) <= 3
+        StageRestoreState.matches(actual, requested)
     }
 
     private func stringAttribute(_ name: String, of element: AXUIElement) -> String? {
@@ -119,7 +160,9 @@ final class StageFillWindowManager {
         if shrinking {
             guard AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString,
                                                 sizeValue) == .success else { return false }
-            Thread.sleep(forTimeInterval: 0.2)
+            // Wait for the resize animation before moving. An earlier position
+            // write can interrupt it and leave the window at an intermediate size.
+            Thread.sleep(forTimeInterval: 0.8)
             guard AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString,
                                                 positionValue) == .success else { return false }
         } else {

@@ -51,12 +51,17 @@ Click the microphone in the menu bar to see the current input, switch microphone
 ### Stage Manager Fill
 
 1. Activate the window you want to resize.
-2. Click the Microphone Choice menu bar icon and choose **Stage Manager Fill**. The menu shows the app it will target.
-3. Open **Stage Manager Fill settings…** to change the reserved width (220 screen points by default), enable or disable this feature, or remember a different width for each connected display.
+2. Hover over its green button, then click the **Stage Manager Fill** companion beside it. You can also use **Stage Manager Fill** in the Microphone Choice menu bar menu, which shows the app it will target.
+3. For a faster gesture, enable **Override title-bar double-click** in **Stage Manager Fill settings…**. Double-click an empty title-bar area to fill; double-click again to restore that window's previous size and position.
+4. Settings also let you turn off the companion, change the reserved width (220 screen points by default), disable the feature, or remember a different width for each connected display.
 
 Stage Manager Fill moves only that app's focused standard window. It chooses the display containing the largest part of the window, uses that display's available area after the menu bar and Dock, and leaves the configured space on the left. macOS screen points account for display scaling; the value is clamped on small displays so the window stays usable. The window remains a normal window. The green button and Apple's tiling menu keep their usual behavior.
 
-macOS does not provide a supported way for third-party apps to add an item to another app's green-button tiling menu, or a public measurement of Stage Manager's current width. The menu bar action is the mouse-driven alternative, and you set the reserved width yourself. Some apps impose window constraints or ignore Accessibility resize requests; the app reports an unsuccessful fill and attempts to restore the previous frame. Minimized, native full-screen, nonstandard, and nonresizable windows are skipped.
+The companion is a separate native control beside the green button. macOS does not provide a supported way to insert an item inside another app's tiling menu, or a public measurement of Stage Manager's current width. You set the reserved width yourself. The companion hides when the pointer leaves the controls or you switch windows, and is omitted if there is no room beside the button.
+
+The double-click override is off by default. It recognizes standard, empty title-bar areas and leaves modified clicks, tabs, buttons, text fields, and unrecognized custom title bars to their apps. Restore positions are remembered separately for up to 128 windows during the current app session. A manual move or resize becomes the starting position for the next fill. The menu bar and companion actions always fill; a subsequent title-bar double-click can restore their saved position too. A restore is refused if its old title bar is no longer reachable on a connected display.
+
+Some apps impose window constraints or ignore Accessibility resize requests; the app reports an unsuccessful fill and attempts to restore the previous frame. Minimized, native full-screen, nonstandard, and nonresizable windows are skipped.
 
 Stage Manager Fill requires **Accessibility** access to read the focused window's role and frame and move or resize it. Its settings show the current access status and include **Open Accessibility Settings…**. The app does not request this access at launch or use it for microphone selection. macOS may require you to grant access again after replacing or rebuilding the app.
 
@@ -69,7 +74,7 @@ Stage Manager Fill requires **Accessibility** access to read the focused window'
 | Global keyboard shortcut | Opens the choice dialog for a connected Bluetooth microphone, or settings when none is connected. Disabled by default; enable it and choose a letter with modifiers. The default is **Control–Option–Command–M**. An unavailable combination leaves your previous shortcut active. |
 | Saved devices | Changes the saved microphone, opens its dialog, or forgets a choice. **Undo forget** restores the most recently forgotten choice. Disconnected devices can be edited for their next connection. |
 | Diagnostics | Shows the current input, detected Bluetooth microphones, observed connection times, and why a popup appeared or was skipped. **Test popup** checks the dialog without changing audio or saved choices. **Copy report** copies the local report without device identifiers. |
-| Stage Manager Fill | Enables the menu bar resize action, sets the global reserved width in screen points, and optionally stores a width for each display. Shows Accessibility status. |
+| Stage Manager Fill | Controls the green-button companion and optional title-bar double-click toggle, sets the reserved width, and optionally remembers a width per display. Shows Accessibility status. |
 
 Saved preferred choices follow the global preferred-microphone setting. Existing saved Mac-microphone choices are preserved when you upgrade. Switching an input from the menu bar changes the current input without overwriting saved choices.
 
@@ -85,7 +90,7 @@ It works with Bluetooth devices that macOS exposes as microphone inputs. It chan
 
 On a Mac without an available non-Bluetooth input, the app can still offer the Bluetooth microphone, but cannot provide a separate microphone for higher-quality playback.
 
-The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It reads Bluetooth connection status and audio device information, then changes the default input. Choices, settings, and theme overrides are stored in local app preferences. The global shortcut uses macOS hotkey registration and does not require Accessibility permission. Stage Manager Fill uses Accessibility only when you invoke its window action. The diagnostic report stays in memory for the current session; diagnostic messages also go to the process's local standard error log.
+The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It reads Bluetooth connection status and audio device information, then changes the default input. Choices, settings, and theme overrides are stored in local app preferences. The global shortcut uses macOS hotkey registration and does not require Accessibility permission. With Accessibility access, the Stage Manager companion checks the pointer and focused window's geometry while enabled. The optional double-click override listens for left mouse clicks and checks the clicked Accessibility element; it does not monitor keystrokes or save mouse activity. Window frames are changed only when you invoke an action. Turning Stage Manager Fill off stops both interactions. The diagnostic report stays in memory for the current session; diagnostic messages also go to the process's local standard error log.
 
 ## Build from source
 
@@ -99,7 +104,9 @@ cd microphone-choice
 
 The universal app and ZIP appear in `build/`. The build script compiles both Apple silicon and Intel binaries, generates all macOS icon sizes from the approved artwork, and ad hoc signs the app. Run `build/Microphone Choice.app/Contents/MacOS/MicChoice --probe` to list connected Bluetooth microphones without starting the monitor. `--probe-inputs` lists all microphone names and transports. `--test-prompt` shows a diagnostic dialog and closes it after eight seconds without changing audio or choices.
 
-Run `./scripts/test-connection-tracker.sh` for the connection, saved-choice migration, settings, fallback selection, single-instance, diagnostics, and hotkey registration tests. Run `./scripts/test-stage-manager-fill.sh` for window geometry, display selection, and saved width tests. Developers can open the built executable with `--preview` for a disposable settings session with sample devices and no audio, login-setting, or external-window changes. Use `--preview-light` or `--preview-dark` with it to check both themes. Keyboard shortcuts in a preview still register with macOS until you disable them or quit.
+Run `./scripts/test-connection-tracker.sh` for the connection, saved-choice migration, settings, fallback selection, single-instance, diagnostics, and hotkey registration tests. Run `./scripts/test-stage-manager-fill.sh` for window geometry, display selection, saved preferences, pointer safeguards, and restore policy tests. Developers can open the built executable with `--preview` for a disposable settings session with sample devices and no audio, login-setting, or external-window changes. Use `--preview-light` or `--preview-dark` with it to check both themes. Keyboard shortcuts in a preview still register with macOS until you disable them or quit.
+
+For the real window animation and restore checks, run `./scripts/test-stage-manager-live.sh` in a desktop session with Accessibility access for your terminal. It opens two disposable test windows, verifies independent fill/restore cycles and repeated Fill commands, then closes them. This opt-in check is separate from headless CI.
 
 ## Contributing
 

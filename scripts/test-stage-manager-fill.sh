@@ -6,6 +6,8 @@ test_binary="$(mktemp /tmp/stage-fill-tests.XXXXXX)"
 trap 'rm -f "$test_binary"' EXIT
 swiftc "$project_dir/Sources/MicrophoneChoice/StageManagerFill/StageFillGeometry.swift" \
   "$project_dir/Sources/MicrophoneChoice/StageManagerFill/StageFillPreferences.swift" \
+  "$project_dir/Sources/MicrophoneChoice/StageManagerFill/StagePointerPolicy.swift" \
+  "$project_dir/Sources/MicrophoneChoice/StageManagerFill/StageRestoreState.swift" \
   "$project_dir/Tests/StageFillTests.swift" \
   -framework AppKit -framework ColorSync -o "$test_binary"
 "$test_binary"

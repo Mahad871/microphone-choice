@@ -41,6 +41,9 @@ struct StageFillTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = StageFillPreferences(defaults: defaults)
         assert(preferences.enabled && !preferences.rememberPerDisplay)
+        assert(preferences.greenButtonCompanion && !preferences.titleBarDoubleClick)
+        preferences.titleBarDoubleClick = true
+        preferences.greenButtonCompanion = false
         assert(preferences.defaultReservation == 220)
         preferences.setReservation(230, for: external.key)
         assert(preferences.defaultReservation == 230)
@@ -53,11 +56,38 @@ struct StageFillTests {
         preferences.enabled = false
         let reloaded = StageFillPreferences(defaults: defaults)
         assert(!reloaded.enabled && reloaded.rememberPerDisplay)
+        assert(reloaded.titleBarDoubleClick && !reloaded.greenButtonCompanion)
         assert(reloaded.reservation(for: external.key) == 280)
         reloaded.rememberPerDisplay = false
         assert(reloaded.reservation(for: external.key) == 230)
         reloaded.defaultReservation = 9000
         assert(reloaded.defaultReservation == StageFillPreferences.maximumReservation)
-        print("Stage Fill geometry, display selection, and preferences passed")
+        var clicks = StageClickSequence()
+        let point = CGPoint(x: 200, y: 50)
+        assert(!clicks.down(at: point, time: 1, count: 1, unmodified: true, interval: 0.5))
+        assert(clicks.down(at: point, time: 1.2, count: 2, unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: point, time: 1.3, count: 3, unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: point, time: 2, count: 1, unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: point, time: 2.2, count: 2, unmodified: false, interval: 0.5))
+        assert(!clicks.down(at: point, time: 3, count: 1, unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: CGPoint(x: 240, y: 50), time: 3.2, count: 2,
+                            unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: point, time: 4, count: 1, unmodified: true, interval: 0.5))
+        assert(!clicks.down(at: point, time: 5, count: 2, unmodified: true, interval: 0.5))
+        let companion = StageCompanionGeometry.frame(beside:
+            CGRect(x: 60, y: 865, width: 14, height: 14), visible: primary.visibleFrame)
+        assert(companion?.maxY == primary.visibleFrame.maxY)
+        assert(companion!.minX > 74)
+        assert(StageCompanionGeometry.frame(beside:
+            CGRect(x: 1400, y: 865, width: 14, height: 14), visible: primary.visibleFrame) == nil)
+        let original = CGRect(x: 400, y: 200, width: 620, height: 422)
+        let restore = StageRestoreState(original: original, filled: primaryTarget)
+        assert(restore.restoreFrame(current: primaryTarget) == original)
+        assert(restore.restoreFrame(current: primaryTarget.offsetBy(dx: 1, dy: -1)) == original)
+        assert(restore.restoreFrame(current: primaryTarget.offsetBy(dx: 50, dy: 0)) == nil)
+        var manuallyResized = primaryTarget
+        manuallyResized.size.width -= 100
+        assert(restore.restoreFrame(current: manuallyResized) == nil)
+        print("Stage Fill geometry, preferences, pointer safeguards, and restore policy passed")
     }
 }
