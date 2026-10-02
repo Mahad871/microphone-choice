@@ -392,7 +392,10 @@ if CommandLine.arguments.contains("--probe") {
         let shortcut = GlobalShortcut()
         let monitor = MicrophoneMonitor(settings: settings, remembered: remembered,
                                        notifications: notifications, preview: preview)
-        let desktop = DesktopController(monitor: monitor, login: login, shortcut: shortcut)
+        let stageFill = StageManagerFeature(preferences: StageFillPreferences(defaults: defaults),
+                                            preview: preview)
+        let desktop = DesktopController(monitor: monitor, login: login, shortcut: shortcut,
+                                        stageFill: stageFill)
         app.delegate = desktop
         desktop.onTermination = { if let suiteName { defaults.removePersistentDomain(forName: suiteName) } }
         notifications.onChangeChoice = { [weak monitor] key in monitor?.requestChoice(for: key) }

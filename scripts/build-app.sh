@@ -12,10 +12,12 @@ mkdir -p "$resource_dir" "$app_dir/Contents/MacOS" "$work_dir/MicChoice.iconset"
 cp "$project_dir/Assets/Info.plist" "$app_dir/Contents/Info.plist"
 
 source_dir="$project_dir/Sources/MicrophoneChoice"
+stage_dir="$source_dir/StageManagerFill"
 sdk_dir="$(xcrun --sdk macosx --show-sdk-path)"
 for architecture in arm64 x86_64; do
   swiftc -O -target "${architecture}-apple-macos13.0" -sdk "$sdk_dir" \
-    "$source_dir"/*.swift -framework IOBluetooth -framework UserNotifications -framework Carbon \
+    "$source_dir"/*.swift "$stage_dir"/*.swift \
+    -framework IOBluetooth -framework UserNotifications -framework Carbon -framework ColorSync \
     -o "$work_dir/MicChoice-$architecture"
 done
 lipo -create "$work_dir/MicChoice-arm64" "$work_dir/MicChoice-x86_64" \
