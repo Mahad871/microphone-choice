@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import ServiceManagement
 
 extension AppTheme {
@@ -20,10 +21,11 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private let monitor: MicrophoneMonitor
     private let login: LoginController
     private let shortcut: GlobalShortcut
+    private let stageFill: StageManagerFeature
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
     private var panels: [NSView] = []
-    private let tabs = NSSegmentedControl(labels: ["General", "Saved devices", "Diagnostics"],
+    private let tabs = NSSegmentedControl(labels: ["General", "Saved devices", "Diagnostics", "Stage Manager Fill"],
                                           trackingMode: .selectOne, target: nil, action: nil)
     private let preferredPopup = NSPopUpButton()
     private let themePopup = NSPopUpButton()
@@ -40,14 +42,26 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     private let savedStack = NSStackView()
     private let undoButton = NSButton(title: "Undo forget", target: nil, action: nil)
     private let reportView = NSTextView()
+    private let stageEnableSwitch = NSSwitch()
+    private let stagePerDisplaySwitch = NSSwitch()
+    private let stageDisplayPopup = NSPopUpButton()
+    private let stageWidthField = NSTextField()
+    private let stageSaveWidthButton = NSButton(title: "Save width", target: nil, action: nil)
+    private let stageActionButton = NSButton(title: "Fill last active window", target: nil, action: nil)
+    private let stageWidthDescription = NSTextField(wrappingLabelWithString: "")
+    private let stagePermissionLabel = NSTextField(wrappingLabelWithString: "")
+    private let stageResultLabel = NSTextField(wrappingLabelWithString: "")
     private var inputSignature = ""
     private var savedSignature = ""
+    private var displaySignature = ""
     private var shortcutError: String?
 
-    init(monitor: MicrophoneMonitor, login: LoginController, shortcut: GlobalShortcut) {
+    init(monitor: MicrophoneMonitor, login: LoginController, shortcut: GlobalShortcut,
+         stageFill: StageManagerFeature) {
         self.monitor = monitor
         self.login = login
         self.shortcut = shortcut
+        self.stageFill = stageFill
     }
 
     func start() {
@@ -69,12 +83,23 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         guard settingsWindow?.isVisible == true else { return }
         refreshGeneral()
         refreshSavedDevices()
+        refreshStageFill()
         let report = monitor.diagnosticReport(shortcutStatus: shortcut.status)
         if reportView.string != report { reportView.string = report }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
+        let fill = item("Stage Manager Fill", action: #selector(fillStageManager))
+        fill.isEnabled = stageFill.preferences.enabled
+        fill.image = NSImage(systemSymbolName: "rectangle.inset.filled",
+                             accessibilityDescription: "Fill beside Stage Manager")
+        menu.addItem(fill)
+        if let appName = stageFill.targetAppName {
+            menu.addItem(item("Window from: \(appName)", enabled: false))
+        }
+        menu.addItem(item("Stage Manager Fill settings…", action: #selector(openStageSettings)))
+        menu.addItem(.separator())
         let current = currentInputDevice()
         menu.addItem(item("Current: \(current?.displayName ?? "No microphone")", enabled: false))
         let inputsMenu = NSMenu(title: "Switch input")
@@ -147,7 +172,8 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         tabs.target = self
         tabs.action = #selector(tabChanged)
         tabs.selectedSegment = 0
-        for (index, tip) in ["Microphone and app settings", "Manage remembered devices", "Connection status and testing"].enumerated() {
+        for (index, tip) in ["Microphone and app settings", "Manage remembered devices",
+                             "Connection status and testing", "Resize the focused window beside Stage Manager"].enumerated() {
             tabs.setToolTip(tip, forSegment: index)
         }
         tabs.setAccessibilityLabel("Settings section")
@@ -158,7 +184,7 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         host.translatesAutoresizingMaskIntoConstraints = false
         host.widthAnchor.constraint(equalTo: layout.widthAnchor).isActive = true
         tabs.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        panels = [makeGeneralPanel(), makeSavedPanel(), makeDiagnosticsPanel()]
+        panels = [makeGeneralPanel(), makeSavedPanel(), makeDiagnosticsPanel(), makeStagePanel()]
         for panel in panels { host.addSubview(panel); pin(panel, to: host) }
         selectPanel(0)
     }
@@ -286,6 +312,69 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         return panel
     }
 
+    private func makeStagePanel() -> NSView {
+        stageEnableSwitch.target = self
+        stageEnableSwitch.action = #selector(stageEnabledChanged)
+        stageEnableSwitch.setAccessibilityLabel("Enable Stage Manager Fill")
+        stagePerDisplaySwitch.target = self
+        stagePerDisplaySwitch.action = #selector(stagePerDisplayChanged)
+        stagePerDisplaySwitch.setAccessibilityLabel("Remember a width for each display")
+        stageDisplayPopup.target = self
+        stageDisplayPopup.action = #selector(stageDisplayChanged)
+        stageDisplayPopup.setAccessibilityLabel("Display to configure")
+        stageDisplayPopup.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        stageWidthField.setAccessibilityLabel("Reserved width in screen points")
+        stageWidthField.alignment = .right
+        stageWidthField.widthAnchor.constraint(equalToConstant: 92).isActive = true
+        stageSaveWidthButton.target = self
+        stageSaveWidthButton.action = #selector(saveStageWidth)
+        let widthRow = stack([stageWidthField, NSTextField(labelWithString: "pt"), stageSaveWidthButton],
+                             vertical: false, spacing: 10)
+        stageActionButton.target = self
+        stageActionButton.action = #selector(fillStageManager)
+        let accessibilityButton = NSButton(title: "Open Accessibility Settings…", target: self,
+                                            action: #selector(openAccessibilitySettings))
+        let refreshAccess = NSButton(title: "Check access", target: self,
+                                     action: #selector(checkStageAccess))
+        let panel = stack([
+            heading("Stage Manager Fill"),
+            note("Fill the last active app window while leaving space on the left for Stage Manager. Apple's green button and tiling menu stay unchanged."),
+            separator(),
+            switchRow(stageEnableSwitch, title: "Enable Stage Manager Fill"),
+            switchRow(stagePerDisplaySwitch, title: "Remember a width for each display"),
+            stageDisplayPopup,
+            heading("Reserved width"),
+            widthRow,
+            secondary(stageWidthDescription),
+            separator(),
+            heading("Accessibility"),
+            secondary(stagePermissionLabel),
+            stack([accessibilityButton, refreshAccess], vertical: false, spacing: 10),
+            separator(),
+            stageActionButton,
+            secondary(stageResultLabel)
+        ], vertical: true, spacing: 11)
+        // Let the last status label take spare space; keep controls at the top
+        // on a taller window and allow a compact window to scroll.
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        let document = FlippedDocumentView()
+        scroll.documentView = document
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+        document.addSubview(panel)
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            panel.topAnchor.constraint(equalTo: document.topAnchor, constant: 3),
+            panel.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            panel.bottomAnchor.constraint(equalTo: document.bottomAnchor)
+        ])
+        return scroll
+    }
+
     private func selectPanel(_ index: Int) {
         for (position, panel) in panels.enumerated() { panel.isHidden = position != index }
         refresh()
@@ -368,6 +457,41 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
         undoButton.toolTip = monitor.undoableForget.map { "Restore the saved choice for \($0.choice.deviceName)" }
     }
 
+    private func refreshStageFill() {
+        let preferences = stageFill.preferences
+        stageEnableSwitch.state = preferences.enabled ? .on : .off
+        stagePerDisplaySwitch.state = preferences.rememberPerDisplay ? .on : .off
+        let displays = StageDisplay.connected()
+        let signature = displays.map { "\($0.key):\($0.name):\($0.visibleFrame)" }.joined(separator: "|")
+        if signature != displaySignature {
+            let previous = stageDisplayPopup.selectedItem?.representedObject as? String
+            stageDisplayPopup.removeAllItems()
+            for display in displays {
+                let frame = display.visibleFrame
+                stageDisplayPopup.addItem(withTitle:
+                    "\(display.name) — \(Int(frame.width)) × \(Int(frame.height)) pt")
+                stageDisplayPopup.lastItem?.representedObject = display.key
+            }
+            if let previous, let item = stageDisplayPopup.itemArray.first(where: {
+                $0.representedObject as? String == previous
+            }) { stageDisplayPopup.select(item) }
+            displaySignature = signature
+        }
+        stageDisplayPopup.isHidden = !preferences.rememberPerDisplay
+        stageDisplayPopup.isEnabled = preferences.enabled && !displays.isEmpty
+        stageWidthField.isEnabled = preferences.enabled
+        stageSaveWidthButton.isEnabled = preferences.enabled
+        stageActionButton.isEnabled = preferences.enabled
+        stagePerDisplaySwitch.isEnabled = preferences.enabled
+        let displayKey = stageDisplayPopup.selectedItem?.representedObject as? String
+        let width = preferences.reservation(for: displayKey ?? "")
+        if stageWidthField.currentEditor() == nil { stageWidthField.stringValue = String(width) }
+        stageWidthDescription.stringValue = "Leave \(width) screen points on the left. The app clamps this width on smaller displays; screen points adjust to display scaling."
+        stagePermissionLabel.stringValue = AXIsProcessTrusted()
+            ? "Access granted. Ready to resize other apps' windows."
+            : "Accessibility access is required to move and resize other apps' windows. Microphone Choice continues to work without it."
+    }
+
     private func buildMainMenu() {
         let menu = NSMenu()
         let appItem = NSMenuItem()
@@ -442,6 +566,55 @@ final class DesktopController: NSObject, NSMenuDelegate, NSApplicationDelegate {
     @objc private func openSettings() { showSettings(tab: 0) }
     @objc private func openSavedDevices() { showSettings(tab: 1) }
     @objc private func openDiagnostics() { showSettings(tab: 2) }
+    @objc private func openStageSettings() { showSettings(tab: 3) }
+    @objc private func stageEnabledChanged() {
+        stageFill.preferences.enabled = stageEnableSwitch.state == .on
+        refresh()
+    }
+    @objc private func stagePerDisplayChanged() {
+        stageFill.preferences.rememberPerDisplay = stagePerDisplaySwitch.state == .on
+        refresh()
+    }
+    @objc private func stageDisplayChanged() {
+        stageWidthField.window?.makeFirstResponder(nil)
+        refreshStageFill()
+    }
+    @objc private func saveStageWidth() {
+        let text = stageWidthField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let width = Int(text), 0...StageFillPreferences.maximumReservation ~= width else {
+            stageResultLabel.stringValue = "Enter a whole number from 0 to \(StageFillPreferences.maximumReservation)."
+            stageResultLabel.textColor = .systemRed
+            return
+        }
+        let displayKey = stageDisplayPopup.selectedItem?.representedObject as? String
+        stageFill.preferences.setReservation(width, for: displayKey)
+        stageResultLabel.stringValue = "Reserved width saved."
+        stageResultLabel.textColor = .secondaryLabelColor
+        stageWidthField.window?.makeFirstResponder(nil)
+        refreshStageFill()
+    }
+    @objc private func checkStageAccess() { refreshStageFill() }
+    @objc private func openAccessibilitySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        if !NSWorkspace.shared.open(url) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
+        }
+    }
+    @objc private func fillStageManager() {
+        switch stageFill.fillFocusedWindow() {
+        case .filled(let display, _, _):
+            stageResultLabel.stringValue = "Filled the window on \(display)."
+            stageResultLabel.textColor = .secondaryLabelColor
+        case .needsAccessibility:
+            stageResultLabel.stringValue = "Grant Accessibility access, then choose Stage Manager Fill again."
+            stageResultLabel.textColor = .systemRed
+            showSettings(tab: 3)
+        case .unavailable(let reason):
+            stageResultLabel.stringValue = reason
+            stageResultLabel.textColor = .systemRed
+            showSettings(tab: 3)
+        }
+    }
     @objc private func usePreferred() { monitor.usePreferredInput() }
     @objc private func selectInputFromMenu(_ sender: NSMenuItem) {
         if let uid = sender.representedObject as? String { monitor.switchInput(to: uid) }

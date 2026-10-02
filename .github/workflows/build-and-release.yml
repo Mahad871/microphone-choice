@@ -18,6 +18,8 @@ jobs:
           persist-credentials: false
       - name: Check connections, preferences, and hotkeys
         run: ./scripts/test-connection-tracker.sh
+      - name: Check Stage Manager Fill geometry and preferences
+        run: ./scripts/test-stage-manager-fill.sh
       - name: Build universal app and ZIP
         run: ./scripts/package-release.sh
       - name: Verify package

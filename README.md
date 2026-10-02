@@ -4,7 +4,7 @@
 
 **Keep your Bluetooth headphones sounding their best, while choosing the microphone you actually want.**
 
-Microphone Choice is a small, open-source macOS menu bar app. When a Bluetooth device with a microphone connects for the first time, it selects your preferred microphone and asks whether you want to keep it or use the Bluetooth microphone. The default is your Mac's built-in microphone; you can choose a USB microphone or audio interface instead. On later connections, it applies any choice you saved for that device. The app leaves your output device alone.
+Microphone Choice is a small, open-source macOS menu bar app with two independent fixes for everyday macOS annoyances: microphone selection and Stage Manager window sizing. When a Bluetooth device with a microphone connects for the first time, it selects your preferred microphone and asks whether you want to keep it or use the Bluetooth microphone. The default is your Mac's built-in microphone; you can choose a USB microphone or audio interface instead. On later connections, it applies any choice you saved for that device. The app leaves your output device alone.
 
 Check **Remember my choice for this device** in the dialog to use that choice automatically on future connections. The app then shows a notification confirming the saved choice. Click **Change choice** (or the notification itself) to reopen the dialog; uncheck the box and choose a microphone to forget the saved choice. You can also change or forget choices from **Saved devices**, even when notifications are disabled.
 
@@ -46,7 +46,19 @@ Use one installation method at a time. A single-instance guard prevents two app 
 
 ## Menu bar and settings
 
-Click the microphone in the menu bar to see the current input, switch microphones, reopen the Bluetooth microphone dialog, or open settings.
+Click the microphone in the menu bar to see the current input, switch microphones, reopen the Bluetooth microphone dialog, fill a window beside Stage Manager, or open settings.
+
+### Stage Manager Fill
+
+1. Activate the window you want to resize.
+2. Click the Microphone Choice menu bar icon and choose **Stage Manager Fill**. The menu shows the app it will target.
+3. Open **Stage Manager Fill settings…** to change the reserved width (220 screen points by default), enable or disable this feature, or remember a different width for each connected display.
+
+Stage Manager Fill moves only that app's focused standard window. It chooses the display containing the largest part of the window, uses that display's available area after the menu bar and Dock, and leaves the configured space on the left. macOS screen points account for display scaling; the value is clamped on small displays so the window stays usable. The window remains a normal window. The green button and Apple's tiling menu keep their usual behavior.
+
+macOS does not provide a supported way for third-party apps to add an item to another app's green-button tiling menu, or a public measurement of Stage Manager's current width. The menu bar action is the mouse-driven alternative, and you set the reserved width yourself. Some apps impose window constraints or ignore Accessibility resize requests; the app reports an unsuccessful fill and attempts to restore the previous frame. Minimized, native full-screen, nonstandard, and nonresizable windows are skipped.
+
+Stage Manager Fill requires **Accessibility** access to read the focused window's role and frame and move or resize it. Its settings show the current access status and include **Open Accessibility Settings…**. The app does not request this access at launch or use it for microphone selection. macOS may require you to grant access again after replacing or rebuilding the app.
 
 | Setting | What it does |
 | --- | --- |
@@ -57,6 +69,7 @@ Click the microphone in the menu bar to see the current input, switch microphone
 | Global keyboard shortcut | Opens the choice dialog for a connected Bluetooth microphone, or settings when none is connected. Disabled by default; enable it and choose a letter with modifiers. The default is **Control–Option–Command–M**. An unavailable combination leaves your previous shortcut active. |
 | Saved devices | Changes the saved microphone, opens its dialog, or forgets a choice. **Undo forget** restores the most recently forgotten choice. Disconnected devices can be edited for their next connection. |
 | Diagnostics | Shows the current input, detected Bluetooth microphones, observed connection times, and why a popup appeared or was skipped. **Test popup** checks the dialog without changing audio or saved choices. **Copy report** copies the local report without device identifiers. |
+| Stage Manager Fill | Enables the menu bar resize action, sets the global reserved width in screen points, and optionally stores a width for each display. Shows Accessibility status. |
 
 Saved preferred choices follow the global preferred-microphone setting. Existing saved Mac-microphone choices are preserved when you upgrade. Switching an input from the menu bar changes the current input without overwriting saved choices.
 
@@ -72,7 +85,7 @@ It works with Bluetooth devices that macOS exposes as microphone inputs. It chan
 
 On a Mac without an available non-Bluetooth input, the app can still offer the Bluetooth microphone, but cannot provide a separate microphone for higher-quality playback.
 
-The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It reads Bluetooth connection status and audio device information, then changes the default input. Choices, settings, and theme overrides are stored in local app preferences. The global shortcut uses macOS hotkey registration and does not require Accessibility permission. The diagnostic report stays in memory for the current session; diagnostic messages also go to the process's local standard error log.
+The app does not record audio, request microphone capture permission, collect analytics, or send data over the network. It reads Bluetooth connection status and audio device information, then changes the default input. Choices, settings, and theme overrides are stored in local app preferences. The global shortcut uses macOS hotkey registration and does not require Accessibility permission. Stage Manager Fill uses Accessibility only when you invoke its window action. The diagnostic report stays in memory for the current session; diagnostic messages also go to the process's local standard error log.
 
 ## Build from source
 
@@ -86,7 +99,7 @@ cd microphone-choice
 
 The universal app and ZIP appear in `build/`. The build script compiles both Apple silicon and Intel binaries, generates all macOS icon sizes from the approved artwork, and ad hoc signs the app. Run `build/Microphone Choice.app/Contents/MacOS/MicChoice --probe` to list connected Bluetooth microphones without starting the monitor. `--probe-inputs` lists all microphone names and transports. `--test-prompt` shows a diagnostic dialog and closes it after eight seconds without changing audio or choices.
 
-Run `./scripts/test-connection-tracker.sh` for the connection, saved-choice migration, settings, fallback selection, single-instance, diagnostics, and hotkey registration tests. Developers can open the built executable with `--preview` for a disposable settings session with sample devices and no audio or login-setting changes. Use `--preview-light` or `--preview-dark` with it to check both themes. Keyboard shortcuts in a preview still register with macOS until you disable them or quit.
+Run `./scripts/test-connection-tracker.sh` for the connection, saved-choice migration, settings, fallback selection, single-instance, diagnostics, and hotkey registration tests. Run `./scripts/test-stage-manager-fill.sh` for window geometry, display selection, and saved width tests. Developers can open the built executable with `--preview` for a disposable settings session with sample devices and no audio, login-setting, or external-window changes. Use `--preview-light` or `--preview-dark` with it to check both themes. Keyboard shortcuts in a preview still register with macOS until you disable them or quit.
 
 ## Contributing
 
